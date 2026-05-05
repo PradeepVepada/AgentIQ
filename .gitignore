@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables (IMPORTANT - contains API keys)
+.env
+*.env
+
+# Data files (large, user-specific)
+data/raw/*.csv
+data/cleaned/*.csv
+data/engineered/*.csv
+data/processed/*.csv
+data/splits/*.npy
+
+# Keep directory structure
+!data/raw/.gitkeep
+!data/cleaned/.gitkeep
+!data/engineered/.gitkeep
+!data/processed/.gitkeep
+!data/splits/.gitkeep
+
+# Models (large binary files)
+models/
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+*.onnx
+
+# LangGraph state
+.langgraph_api/
+
+# Test cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Firebird
+*.fdb
+*.FDB
