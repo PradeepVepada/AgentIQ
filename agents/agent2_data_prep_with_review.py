@@ -220,8 +220,43 @@ def run_agent_2_with_review(state: Dict[str, Any], llm_client) -> Dict[str, Any]
         
         logger.info(f"[Agent 2] Generated {len(cleaning_plan)} cleaning steps")
         
-        # Execute cleaning plan
+        # If no cleaning plan, apply automatic cleaning
+        if not cleaning_plan:
+            logger.info("[Agent 2] No cleaning plan generated, applying automatic cleaning")
+            cleaning_plan = []
+            
+            # Auto-remove duplicates
+            if df.duplicated().sum() > 0:
+                cleaning_plan.append({
+                    "action": "remove_duplicates",
+                    "column": None,
+                    "method": "keep_first",
+                    "reason": "Remove duplicate rows"
+                })
+            
+            # Auto-impute missing values
+            for col in df.columns:
+                if df[col].isna().sum() > 0:
+                    if pd.api.types.is_numeric_dtype(df[col]):
+                        cleaning_plan.append({
+                            "action": "impute",
+                            "column": col,
+                            "method": "median",
+                            "reason": f"Impute missing values in {col}"
+                        })
+                    else:
+                        cleaning_plan.append({
+                            "action": "impute",
+                            "column": col,
+                            "method": "mode",
+                            "reason": f"Impute missing values in {col}"
+                        })
+        
+        # Execute cleaning plan and track metrics
         execution_log = []
+        missing_handled = 0
+        outliers_detected = 0
+        duplicates_removed = 0
         
         for step in cleaning_plan:
             action = step.get("action")
@@ -232,13 +267,16 @@ def run_agent_2_with_review(state: Dict[str, Any], llm_client) -> Dict[str, Any]
                 if action == "remove_duplicates":
                     before = len(df)
                     df = df.drop_duplicates()
-                    execution_log.append({"step": step, "status": "success", "rows_removed": before - len(df)})
+                    rows_removed = before - len(df)
+                    duplicates_removed += rows_removed
+                    execution_log.append({"step": step, "status": "success", "rows_removed": rows_removed})
                 
                 elif action == "drop_column" and column and column in df.columns:
                     df = df.drop(columns=[column])
                     execution_log.append({"step": step, "status": "success"})
                 
                 elif action == "impute" and column and column in df.columns:
+                    missing_before = df[column].isna().sum()
                     if pd.api.types.is_numeric_dtype(df[column]):
                         if method == "mean":
                             df[column] = df[column].fillna(df[column].mean())
@@ -250,10 +288,12 @@ def run_agent_2_with_review(state: Dict[str, Any], llm_client) -> Dict[str, Any]
                     else:
                         mode_val = df[column].mode()
                         df[column] = df[column].fillna(mode_val.iloc[0] if not mode_val.empty else "Unknown")
-                    execution_log.append({"step": step, "status": "success"})
+                    missing_handled += missing_before
+                    execution_log.append({"step": step, "status": "success", "missing_filled": missing_before})
                 
                 elif action == "remove_outliers" and column and column in df.columns:
                     if pd.api.types.is_numeric_dtype(df[column]):
+                        before = len(df)
                         if method == "iqr_cap":
                             q1, q3 = df[column].quantile(0.25), df[column].quantile(0.75)
                             iqr = q3 - q1
@@ -261,7 +301,9 @@ def run_agent_2_with_review(state: Dict[str, Any], llm_client) -> Dict[str, Any]
                         else:
                             mean, std = df[column].mean(), df[column].std()
                             df = df[(df[column] >= mean - 3 * std) & (df[column] <= mean + 3 * std)]
-                        execution_log.append({"step": step, "status": "success"})
+                        rows_removed = before - len(df)
+                        outliers_detected += rows_removed
+                        execution_log.append({"step": step, "status": "success", "rows_removed": rows_removed})
                 
                 elif action == "fix_types" and column and column in df.columns:
                     try:
@@ -281,14 +323,17 @@ def run_agent_2_with_review(state: Dict[str, Any], llm_client) -> Dict[str, Any]
         logger.info(f"[Agent 2] Saved cleaned data to {cleaned_path}")
         
         cleaning_report = {
+            "rows_processed": rows_before,
+            "missing_handled": missing_handled,
+            "outliers_detected": outliers_detected,
+            "duplicates_removed": duplicates_removed,
+            "cleaning_steps": [e.get("step", {}).get("action") for e in execution_log if e.get("status") == "success"],
             "shape_before": [rows_before, cols_before],
             "shape_after": [len(df), len(df.columns)],
-            "rows_removed": rows_before - len(df),
-            "steps_applied": len([e for e in execution_log if e.get("status") == "success"]),
-            "execution_log": execution_log,
         }
         
         logger.info(f"[Agent 2] Complete: {len(execution_log)} steps executed")
+        logger.info(f"[Agent 2] Metrics: {missing_handled} missing, {outliers_detected} outliers, {duplicates_removed} duplicates")
         
         return {
             "cleaning_report": cleaning_report,
