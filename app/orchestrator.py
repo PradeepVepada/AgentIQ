@@ -3,6 +3,7 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
+from app.error_recovery import ErrorRecoveryManager, FALLBACK_STRATEGIES
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ class PipelineOrchestrator:
         self.storage = storage
         self.llm_client = llm_client
         self.agent_runners = {}
+        self.error_recovery = ErrorRecoveryManager(storage)
     
     def register_agent(self, agent_id: int, runner):
         """Register an agent runner."""
@@ -97,7 +99,7 @@ class PipelineOrchestrator:
                 state["ENABLE_REVISION_LOOP"] = True
             
             # Run all agents sequentially
-            for agent_num in range(1, 7):
+            for agent_num in range(1, 6):  # Agents 1-5 (skip 6 for now)
                 logger.info(f"[Pipeline] Running Agent {agent_num} for {project_id}")
                 await self.storage.update_state(
                     project_id,
@@ -105,16 +107,43 @@ class PipelineOrchestrator:
                     APPROVAL_STATUS="running"
                 )
                 
-                agent_result = await self.agent_runners[agent_num].execute(state, self.llm_client)
+                # Execute with error recovery
+                async def execute_agent():
+                    return await self.agent_runners[agent_num].execute(state, self.llm_client)
                 
+                agent_result = await self.error_recovery.execute_with_retry(
+                    project_id,
+                    agent_num,
+                    execute_agent,
+                )
+                
+                # Check for error
                 if "error" in agent_result:
-                    await self.storage.update_state(
-                        project_id,
-                        CURRENT_STEP=f"agent_{agent_num}_error",
-                        APPROVAL_STATUS="error",
-                        ERROR=agent_result["error"]
-                    )
-                    return {"status": "error", "message": agent_result["error"]}
+                    logger.error(f"[Pipeline] Agent {agent_num} failed: {agent_result['error']}")
+                    
+                    # Try fallback strategy
+                    if agent_num in FALLBACK_STRATEGIES:
+                        logger.info(f"[Pipeline] Attempting fallback for Agent {agent_num}")
+                        try:
+                            agent_result = await FALLBACK_STRATEGIES[agent_num](state)
+                            logger.info(f"[Pipeline] Fallback successful for Agent {agent_num}")
+                        except Exception as e:
+                            logger.error(f"[Pipeline] Fallback failed for Agent {agent_num}: {e}")
+                            await self.storage.update_state(
+                                project_id,
+                                CURRENT_STEP=f"agent_{agent_num}_error",
+                                APPROVAL_STATUS="error",
+                                ERROR=agent_result["error"]
+                            )
+                            return {"status": "error", "message": agent_result["error"]}
+                    else:
+                        await self.storage.update_state(
+                            project_id,
+                            CURRENT_STEP=f"agent_{agent_num}_error",
+                            APPROVAL_STATUS="error",
+                            ERROR=agent_result["error"]
+                        )
+                        return {"status": "error", "message": agent_result["error"]}
                 
                 # Store outputs
                 output_fields = {
@@ -123,7 +152,6 @@ class PipelineOrchestrator:
                     3: ["feature_engineering_plan", "selected_features", "engineered_data_path", "feature_stats"],
                     4: ["candidate_models", "split_strategy", "train_idx_path", "test_idx_path"],
                     5: ["training_results", "tuning_results"],
-                    6: ["evaluation_report"],
                 }
                 
                 updates = {}
@@ -140,6 +168,10 @@ class PipelineOrchestrator:
                 CURRENT_STEP="complete",
                 APPROVAL_STATUS="complete"
             )
+            
+            # Get error summary
+            error_summary = await self.error_recovery.get_error_summary(project_id)
+            logger.info(f"[Pipeline] Complete with error summary: {error_summary}")
             
             return {"status": "pipeline_complete", "project_id": project_id}
             
@@ -174,7 +206,7 @@ class PipelineOrchestrator:
             }
             
             # If last agent, mark complete
-            if agent_num == 6:
+            if agent_num == 5:  # Stop at Agent 5 for now
                 await self.storage.update_state(
                     project_id,
                     CURRENT_STEP="complete",
@@ -197,16 +229,43 @@ class PipelineOrchestrator:
             # Refresh state before passing to agent
             state = await self.storage.get_state(project_id)
             
-            agent_result = await self.agent_runners[next_agent].execute(state, self.llm_client)
+            # Execute with error recovery
+            async def execute_agent():
+                return await self.agent_runners[next_agent].execute(state, self.llm_client)
             
+            agent_result = await self.error_recovery.execute_with_retry(
+                project_id,
+                next_agent,
+                execute_agent,
+            )
+            
+            # Check for error
             if "error" in agent_result:
-                await self.storage.update_state(
-                    project_id,
-                    CURRENT_STEP=f"agent_{next_agent}_error",
-                    APPROVAL_STATUS="error",
-                    ERROR=agent_result["error"]
-                )
-                return {"status": "error", "message": agent_result["error"]}
+                logger.error(f"[Pipeline] Agent {next_agent} failed: {agent_result['error']}")
+                
+                # Try fallback strategy
+                if next_agent in FALLBACK_STRATEGIES:
+                    logger.info(f"[Pipeline] Attempting fallback for Agent {next_agent}")
+                    try:
+                        agent_result = await FALLBACK_STRATEGIES[next_agent](state)
+                        logger.info(f"[Pipeline] Fallback successful for Agent {next_agent}")
+                    except Exception as e:
+                        logger.error(f"[Pipeline] Fallback failed for Agent {next_agent}: {e}")
+                        await self.storage.update_state(
+                            project_id,
+                            CURRENT_STEP=f"agent_{next_agent}_error",
+                            APPROVAL_STATUS="error",
+                            ERROR=agent_result["error"]
+                        )
+                        return {"status": "error", "message": agent_result["error"]}
+                else:
+                    await self.storage.update_state(
+                        project_id,
+                        CURRENT_STEP=f"agent_{next_agent}_error",
+                        APPROVAL_STATUS="error",
+                        ERROR=agent_result["error"]
+                    )
+                    return {"status": "error", "message": agent_result["error"]}
             
             # Store outputs
             output_fields = {
@@ -214,7 +273,6 @@ class PipelineOrchestrator:
                 3: ["feature_engineering_plan", "selected_features", "engineered_data_path", "feature_stats"],
                 4: ["candidate_models", "split_strategy", "train_idx_path", "test_idx_path"],
                 5: ["training_results", "tuning_results"],
-                6: ["evaluation_report"],
             }
             
             updates = {
