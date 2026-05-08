@@ -243,7 +243,7 @@ pytest tests/ --cov=agents --cov=memory -v
 ## Dependencies
 
 - **Orchestration**: langgraph, langsmith
-- **LLM**: openai (NVIDIA API)
+- **LLM**: 4o-mini(openai)
 - **Database**: fdb (Firebird)
 - **Data Processing**: pandas, numpy, scikit-learn
 - **Visualization**: plotly, matplotlib, seaborn
