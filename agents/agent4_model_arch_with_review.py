@@ -203,6 +203,20 @@ def run_agent_4_with_review(state: Dict[str, Any], llm_client) -> Dict[str, Any]
         
         logger.info(f"[Agent 4] Generated {len(arch_plan.get('candidate_models', {}))} candidate models")
         
+        # Convert candidate_models dict to list format for frontend
+        candidate_models_dict = arch_plan.get("candidate_models", {})
+        candidate_models_list = [
+            {
+                "name": model_name,
+                "needs_scaling": model_info.get("needs_scaling", 0),
+                "model_family": model_info.get("model_family", model_name),
+                "reason": f"Selected for {task_type} task"
+            }
+            for model_name, model_info in candidate_models_dict.items()
+        ]
+        
+        logger.info(f"[Agent 4] Converted to list format: {len(candidate_models_list)} models")
+        
         # Create train/test split indices
         project_id = state.get("PROJECT_ID", "")
         engineered_path = state.get("engineered_data_path")
@@ -236,7 +250,7 @@ def run_agent_4_with_review(state: Dict[str, Any], llm_client) -> Dict[str, Any]
             logger.info(f"[Agent 4] Created train/test split: {len(train_idx)} train, {len(test_idx)} test")
             
             return {
-                "candidate_models": arch_plan.get("candidate_models", {}),
+                "candidate_models": candidate_models_list,  # Return as list
                 "split_strategy": arch_plan.get("split_strategy", {}),
                 "train_idx_path": train_idx_path,
                 "test_idx_path": test_idx_path,
@@ -244,7 +258,7 @@ def run_agent_4_with_review(state: Dict[str, Any], llm_client) -> Dict[str, Any]
         else:
             logger.warning("[Agent 4] No engineered data path provided")
             return {
-                "candidate_models": arch_plan.get("candidate_models", {}),
+                "candidate_models": candidate_models_list,  # Return as list
                 "split_strategy": arch_plan.get("split_strategy", {}),
             }
     
