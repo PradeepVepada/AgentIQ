@@ -189,10 +189,33 @@ def run_agent_4_with_review(state: Dict[str, Any], llm_client) -> Dict[str, Any]
         
         # Set defaults if not provided
         if "candidate_models" not in arch_plan:
-            arch_plan["candidate_models"] = {
-                "LogisticRegression": {"needs_scaling": 1, "model_family": "LogisticRegression"},
-                "RandomForest": {"needs_scaling": 0, "model_family": "RandomForestClassifier"},
-            }
+            # Provide comprehensive model list based on task type
+            if task_type == "classification":
+                arch_plan["candidate_models"] = {
+                    "LogisticRegression": {"needs_scaling": 1, "model_family": "LogisticRegression"},
+                    "RandomForest": {"needs_scaling": 0, "model_family": "RandomForestClassifier"},
+                    "GradientBoosting": {"needs_scaling": 0, "model_family": "GradientBoostingClassifier"},
+                    "SVM_RBF": {"needs_scaling": 1, "model_family": "SVC"},
+                    "KNN": {"needs_scaling": 1, "model_family": "KNeighborsClassifier"},
+                    "DecisionTree": {"needs_scaling": 0, "model_family": "DecisionTreeClassifier"},
+                    "XGBoost": {"needs_scaling": 0, "model_family": "XGBClassifier"},
+                    "LightGBM": {"needs_scaling": 0, "model_family": "LGBMClassifier"},
+                    "ExtraTrees": {"needs_scaling": 0, "model_family": "ExtraTreesClassifier"},
+                    "GaussianNB": {"needs_scaling": 0, "model_family": "GaussianNB"},
+                }
+            else:  # regression
+                arch_plan["candidate_models"] = {
+                    "Ridge": {"needs_scaling": 1, "model_family": "Ridge"},
+                    "RandomForestRegressor": {"needs_scaling": 0, "model_family": "RandomForestRegressor"},
+                    "GradientBoostingRegressor": {"needs_scaling": 0, "model_family": "GradientBoostingRegressor"},
+                    "SVR": {"needs_scaling": 1, "model_family": "SVR"},
+                    "KNNRegressor": {"needs_scaling": 1, "model_family": "KNeighborsRegressor"},
+                    "DecisionTreeRegressor": {"needs_scaling": 0, "model_family": "DecisionTreeRegressor"},
+                    "XGBRegressor": {"needs_scaling": 0, "model_family": "XGBRegressor"},
+                    "LGBMRegressor": {"needs_scaling": 0, "model_family": "LGBMRegressor"},
+                    "ExtraTreesRegressor": {"needs_scaling": 0, "model_family": "ExtraTreesRegressor"},
+                    "Lasso": {"needs_scaling": 1, "model_family": "Lasso"},
+                }
         
         if "split_strategy" not in arch_plan:
             arch_plan["split_strategy"] = {
@@ -203,14 +226,40 @@ def run_agent_4_with_review(state: Dict[str, Any], llm_client) -> Dict[str, Any]
         
         logger.info(f"[Agent 4] Generated {len(arch_plan.get('candidate_models', {}))} candidate models")
         
-        # Convert candidate_models dict to list format for frontend
+        # Convert candidate_models dict to list format for frontend with detailed reasoning
         candidate_models_dict = arch_plan.get("candidate_models", {})
+        
+        # Model reasoning based on characteristics
+        model_reasoning = {
+            "LogisticRegression": "Fast, interpretable baseline for binary/multiclass classification with linear decision boundaries",
+            "RandomForest": "Robust ensemble method that handles non-linear relationships and feature interactions well",
+            "GradientBoosting": "Powerful boosting algorithm that builds trees sequentially to correct errors",
+            "SVM_RBF": "Effective for non-linear patterns using kernel trick, good for medium-sized datasets",
+            "KNN": "Simple instance-based learner, effective when similar instances have similar labels",
+            "DecisionTree": "Interpretable model that captures non-linear patterns through recursive splitting",
+            "XGBoost": "State-of-the-art gradient boosting with regularization, often wins competitions",
+            "LightGBM": "Fast gradient boosting optimized for large datasets with leaf-wise tree growth",
+            "ExtraTrees": "Ensemble of randomized trees with extra randomization for better generalization",
+            "GaussianNB": "Probabilistic classifier based on Bayes theorem, fast and works well with small data",
+            "Ridge": "Linear regression with L2 regularization to prevent overfitting",
+            "RandomForestRegressor": "Ensemble of decision trees for robust regression with feature importance",
+            "GradientBoostingRegressor": "Sequential boosting for regression tasks with strong predictive power",
+            "SVR": "Support Vector Regression for non-linear patterns using kernel methods",
+            "KNNRegressor": "Instance-based regression, predicts based on nearest neighbors",
+            "DecisionTreeRegressor": "Tree-based regression capturing non-linear relationships",
+            "XGBRegressor": "Gradient boosting for regression with advanced regularization",
+            "LGBMRegressor": "Fast gradient boosting regressor optimized for efficiency",
+            "ExtraTreesRegressor": "Randomized ensemble regressor for better generalization",
+            "Lasso": "Linear regression with L1 regularization for feature selection",
+        }
+        
         candidate_models_list = [
             {
                 "name": model_name,
                 "needs_scaling": model_info.get("needs_scaling", 0),
                 "model_family": model_info.get("model_family", model_name),
-                "reason": f"Selected for {task_type} task"
+                "reason": model_reasoning.get(model_name, f"Selected for {task_type} task"),
+                "scaling_required": "Yes" if model_info.get("needs_scaling", 0) else "No"
             }
             for model_name, model_info in candidate_models_dict.items()
         ]
