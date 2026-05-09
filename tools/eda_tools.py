@@ -234,6 +234,7 @@ def compile_full_eda(df: pd.DataFrame) -> Dict:
     missing_mechanisms = classify_missing_mechanism(df)
     return {
         "overview": build_dataset_overview(df, col_types),
+        "all_columns": list(df.columns),  # All 32 features
         "column_types": {
             "id": col_types[1],
             "numeric": col_types[2],

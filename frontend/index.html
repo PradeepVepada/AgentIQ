@@ -194,12 +194,89 @@
         
         .approval-section { 
             background: #161B22; border: 1px solid #1E2D3D; border-radius: 10px; 
-            padding: 20px; margin-top: 30px; text-align: center;
+            padding: 16px; margin-top: 30px;
         }
-        .approval-message { font-size: 14px; margin-bottom: 16px; color: #6E7681; }
+        .approval-message { font-size: 13px; margin-bottom: 12px; color: #6E7681; text-align: center; }
         .approval-buttons { display: flex; gap: 10px; justify-content: center; }
-        .btn-approve { background: #3FB950; color: white; padding: 12px 24px; }
+        .btn-approve { background: #3FB950; color: white; padding: 10px 20px; font-size: 13px; }
         .btn-approve:hover { background: #2EA043; }
+        
+        /* FEEDBACK DIALOG - COMPACT */
+        .feedback-dialog {
+            background: linear-gradient(135deg, #161B22 0%, #0D1117 100%);
+            border: 1px solid #1E2D3D;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            text-align: left;
+        }
+        .feedback-dialog.hidden {
+            display: none;
+        }
+        .feedback-container {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+        .feedback-icon {
+            font-size: 18px;
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+        .feedback-content {
+            flex: 1;
+        }
+        .feedback-title {
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #F1F5F9;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .feedback-textarea {
+            width: 100%;
+            min-height: 60px;
+            background: #0D1117;
+            border: 1px solid #1E2D3D;
+            border-radius: 4px;
+            padding: 8px 10px;
+            color: #F1F5F9;
+            font-family: inherit;
+            font-size: 12px;
+            resize: vertical;
+        }
+        .feedback-textarea:focus {
+            outline: none;
+            border-color: #3B82F6;
+            background: #161B22;
+        }
+        .feedback-textarea::placeholder {
+            color: #6E7681;
+            font-size: 11px;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .feature-tag {
+            background: #0D1117;
+            border: 1px solid #1E2D3D;
+            border-radius: 4px;
+            padding: 6px 10px;
+            font-size: 12px;
+            color: #8B949E;
+            text-align: center;
+            word-break: break-word;
+        }
+        .feature-tag.selected {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: #3B82F6;
+            color: #3B82F6;
+        }
         
         .error-message { 
             background: rgba(248, 81, 73, 0.1); border: 1px solid #F85149; 
@@ -386,6 +463,9 @@
                 return;
             }
             
+            // Check if we're in auto mode
+            const isAutoMode = document.getElementById('autoModeToggle').checked;
+            
             // Agent 1 - EDA
             if (state.CURRENT_STEP === 'agent_1_pending_approval' && state.EDA_REPORT) {
                 const report = state.EDA_REPORT;
@@ -472,10 +552,39 @@
                     `;
                 }
                 
-                // Approval section
+                // All 32 Features
+                const allColumns = report.all_columns || [];
+                if (allColumns.length > 0) {
+                    html += `
+                        <div class="section">
+                            <div class="section-title">📋 All ${allColumns.length} Dataset Features</div>
+                            <div class="features-grid">
+                                ${allColumns.map(col => `<div class="feature-tag">${col}</div>`).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Approval section with feedback dialog
                 html += `
                     <div class="approval-section">
                         <div class="approval-message">Agent 1 analysis complete. Review the dataset summary and EDA operations above.</div>
+                        
+                        <!-- Human Feedback Dialog -->
+                        <div class="feedback-dialog" id="feedback-dialog-1">
+                            <div class="feedback-container">
+                                <div class="feedback-icon">💬</div>
+                                <div class="feedback-content">
+                                    <div class="feedback-title">Feedback (Optional)</div>
+                                    <textarea 
+                                        class="feedback-textarea" 
+                                        id="feedback-text-1" 
+                                        placeholder="Share thoughts or concerns..."
+                                    ></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div class="approval-buttons">
                             <button class="btn btn-approve" onclick="approveAgent(1)">✓ Approve & Continue</button>
                         </div>
@@ -485,6 +594,9 @@
                 container.innerHTML = html;
                 container.classList.add('active');
                 currentAgent = 1;
+                
+                // Show/hide feedback dialog based on mode
+                toggleFeedbackDialog(1, isAutoMode);
             }
             // Agent 2 - Data Preparation
             else if (state.CURRENT_STEP === 'agent_2_pending_approval' && state.cleaning_report) {
@@ -562,23 +674,40 @@
                     </div>
                 `;
                 
-                // Cleaning steps
+                // Cleaning steps - DEDUPLICATED
                 const steps = report.cleaning_steps || [];
-                if (steps.length > 0) {
+                const uniqueSteps = [...new Set(steps)]; // Remove duplicates
+                if (uniqueSteps.length > 0) {
                     html += `
                         <div class="section">
                             <div class="section-title">✅ Cleaning Steps Applied</div>
                             <ul class="findings-list">
-                                ${steps.map(s => `<li>${s}</li>`).join('')}
+                                ${uniqueSteps.map(s => `<li>${s}</li>`).join('')}
                             </ul>
                         </div>
                     `;
                 }
                 
-                // Approval section
+                // Approval section with feedback dialog
                 html += `
                     <div class="approval-section">
                         <div class="approval-message">Agent 2 data preparation complete. Review the cleaning operations and reasoning above.</div>
+                        
+                        <!-- Human Feedback Dialog -->
+                        <div class="feedback-dialog" id="feedback-dialog-2">
+                            <div class="feedback-container">
+                                <div class="feedback-icon">💬</div>
+                                <div class="feedback-content">
+                                    <div class="feedback-title">Feedback (Optional)</div>
+                                    <textarea 
+                                        class="feedback-textarea" 
+                                        id="feedback-text-2" 
+                                        placeholder="Share thoughts or concerns..."
+                                    ></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div class="approval-buttons">
                             <button class="btn btn-approve" onclick="approveAgent(2)">✓ Approve & Continue</button>
                         </div>
@@ -588,6 +717,9 @@
                 container.innerHTML = html;
                 container.classList.add('active');
                 currentAgent = 2;
+                
+                // Show/hide feedback dialog based on mode
+                toggleFeedbackDialog(2, isAutoMode);
             }
             // Agent 3 - Feature Engineering
             else if (state.CURRENT_STEP === 'agent_3_pending_approval' && state.feature_engineering_plan) {
@@ -635,15 +767,13 @@
                     </div>
                 `;
                 
-                // Selected Features with Reasoning
+                // Selected Features with Reasoning - DISPLAY ALL 19
                 if (selectedFeatures.length > 0) {
                     html += `
                         <div class="section">
-                            <div class="section-title">✅ Selected Features (${selectedFeatures.length})</div>
-                            <div style="background: #161B22; padding: 16px; border-radius: 8px;">
-                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 13px;">
-                                    ${selectedFeatures.slice(0, 15).map(f => `<div>• ${f}</div>`).join('')}
-                                </div>
+                            <div class="section-title">✅ Final ${selectedFeatures.length} Selected Features</div>
+                            <div class="features-grid">
+                                ${selectedFeatures.map(f => `<div class="feature-tag selected">${f}</div>`).join('')}
                             </div>
                         </div>
                     `;
@@ -677,10 +807,26 @@
                     </div>
                 `;
                 
-                // Approval section
+                // Approval section with feedback dialog
                 html += `
                     <div class="approval-section">
-                        <div class="approval-message">Agent 3 feature engineering complete. Review the selected features and reasoning above.</div>
+                        <div class="approval-message">Agent 3 feature engineering complete. Review the ${selectedFeatures.length} selected features above.</div>
+                        
+                        <!-- Human Feedback Dialog -->
+                        <div class="feedback-dialog" id="feedback-dialog-3">
+                            <div class="feedback-container">
+                                <div class="feedback-icon">💬</div>
+                                <div class="feedback-content">
+                                    <div class="feedback-title">Feedback (Optional)</div>
+                                    <textarea 
+                                        class="feedback-textarea" 
+                                        id="feedback-text-3" 
+                                        placeholder="Share thoughts or concerns..."
+                                    ></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div class="approval-buttons">
                             <button class="btn btn-approve" onclick="approveAgent(3)">✓ Approve & Continue</button>
                         </div>
@@ -690,6 +836,9 @@
                 container.innerHTML = html;
                 container.classList.add('active');
                 currentAgent = 3;
+                
+                // Show/hide feedback dialog based on mode
+                toggleFeedbackDialog(3, isAutoMode);
             }
             // Agent 4 - Model Architecture
             else if (state.CURRENT_STEP === 'agent_4_pending_approval' && state.candidate_models) {
@@ -801,10 +950,26 @@
                     </div>
                 `;
                 
-                // Approval section
+                // Approval section with feedback dialog
                 html += `
                     <div class="approval-section">
                         <div class="approval-message">Agent 4 model architecture complete. Review all ${models.length} candidate models and their reasoning above.</div>
+                        
+                        <!-- Human Feedback Dialog -->
+                        <div class="feedback-dialog" id="feedback-dialog-4">
+                            <div class="feedback-container">
+                                <div class="feedback-icon">💬</div>
+                                <div class="feedback-content">
+                                    <div class="feedback-title">Feedback (Optional)</div>
+                                    <textarea 
+                                        class="feedback-textarea" 
+                                        id="feedback-text-4" 
+                                        placeholder="Share thoughts or concerns..."
+                                    ></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div class="approval-buttons">
                             <button class="btn btn-approve" onclick="approveAgent(4)">✓ Approve & Continue</button>
                         </div>
@@ -814,6 +979,9 @@
                 container.innerHTML = html;
                 container.classList.add('active');
                 currentAgent = 4;
+                
+                // Show/hide feedback dialog based on mode
+                toggleFeedbackDialog(4, isAutoMode);
             }
             else if (state.CURRENT_STEP && state.CURRENT_STEP.includes('running')) {
                 container.innerHTML = `
@@ -861,15 +1029,34 @@
             console.log('Self-review loop:', enabled ? 'enabled' : 'disabled');
         }
         
+        function toggleFeedbackDialog(agentNum, isAutoMode) {
+            // Show feedback dialog only in human-in-loop mode
+            const feedbackDialog = document.getElementById(`feedback-dialog-${agentNum}`);
+            if (feedbackDialog) {
+                if (isAutoMode) {
+                    feedbackDialog.classList.add('hidden');
+                } else {
+                    feedbackDialog.classList.remove('hidden');
+                }
+            }
+        }
+        
         async function approveAgent(agentNum) {
             try {
+                // Get feedback from textarea
+                const feedbackElement = document.getElementById(`feedback-text-${agentNum}`);
+                const feedback = feedbackElement ? feedbackElement.value.trim() : '';
+                
                 const res = await fetch(`${API}/projects/${currentProjectId}/approve/${agentNum}`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({feedback: ''})
+                    body: JSON.stringify({feedback: feedback})
                 });
                 const data = await res.json();
                 console.log('Agent approved:', data);
+                if (feedback) {
+                    console.log('Feedback provided:', feedback);
+                }
                 currentAgent = agentNum + 1;
                 updateProjectView();
             } catch (e) {
