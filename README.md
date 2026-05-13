@@ -2,7 +2,7 @@
 
 An autonomous 6-agent ML pipeline that guides users through the complete data science workflow:
 **EDA → Data Prep → Feature Engineering → Model Architecture → Training → Evaluation**. 
-This system though sequential mimic's the job that of a data analyst, system's ability make dynamically change tracks and switch imeplementation plans based on the self-correction/review loop and that of user's feedback is its core advantage.
+This system though sequential mimic's the job that of a data analyst, system's ability to dynamically change tracks and switch imeplementation plans based on the self-correction/review loop and that of user's feedback is its core advantage.
 
 Each step includes human approval gates, LangSmith tracing, and Firebird persistence.
 
