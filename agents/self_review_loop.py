@@ -296,6 +296,15 @@ def create_conditional_edge(agent_id: int) -> Callable:
     def conditional_edge(state: Dict[str, Any]) -> str:
         """Decide: approve and exit, or loop back for revision."""
         
+        # ✅ CHECK TIMEOUT FIRST (max_iterations) - FIXED
+        iterations = state.get("iterations", 0)
+        max_iterations = state.get("max_iterations", 1)
+        
+        if iterations >= max_iterations:
+            logger.warning(f"[Agent {agent_id}] Max iterations ({max_iterations}) reached, forcing approval")
+            state["approved"] = True
+            return "exit"
+        
         # Skip review loop if disabled (for thesis presentation speed)
         if not state.get("enable_revision_loop", True):
             logger.info(f"[Agent {agent_id}] → Review loop disabled, auto-approving")

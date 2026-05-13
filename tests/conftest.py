@@ -5,6 +5,8 @@ import os
 import pickle
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock, MagicMock
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -12,6 +14,115 @@ import pytest
 
 DATA_DIR = Path(__file__).parent / "fixtures"
 DATA_DIR.mkdir(exist_ok=True)
+
+
+# ── Mock LLM Client ──────────────────────────────────────────────────────
+
+class MockLLMClient:
+    """Mock LLM client for testing without API calls."""
+    
+    def __init__(self, model: str = "gpt-4o-mini"):
+        self.model = model
+        self.call_count = 0
+        self.last_prompt = None
+    
+    def invoke(self, prompt: str):
+        """Mock LLM invocation."""
+        self.call_count += 1
+        self.last_prompt = prompt
+        
+        # Return mock response based on prompt content
+        if "EDA" in prompt or "analysis" in prompt.lower():
+            content = "APPROVED: The EDA analysis is comprehensive and well-structured."
+        elif "review" in prompt.lower():
+            content = "APPROVED: The output meets quality standards."
+        else:
+            content = "APPROVED: The analysis is complete."
+        
+        # Return object with .content attribute
+        response = Mock()
+        response.content = content
+        return response
+
+
+@pytest.fixture
+def mock_llm_client():
+    """Provide a mock LLM client for testing."""
+    return MockLLMClient()
+
+
+# ── Firebird Database Fixtures ──────────────────────────────────────────
+
+@pytest.fixture
+def temp_firebird_db():
+    """Create a temporary Firebird database for testing."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test.fdb")
+        
+        # Try to create a Firebird database
+        try:
+            import fdb
+            # Create empty database
+            con = fdb.create_database(
+                f"localhost:{db_path}",
+                user="SYSDBA",
+                password="masterkey"
+            )
+            con.close()
+            yield db_path
+        except ImportError:
+            # Firebird not installed, skip
+            pytest.skip("Firebird not installed")
+        except Exception as e:
+            # Firebird not available, skip
+            pytest.skip(f"Firebird not available: {e}")
+
+
+# ── Memory Fixtures ─────────────────────────────────────────────────────
+
+@pytest.fixture
+def mock_decision():
+    """Create a mock Decision object for testing."""
+    from datetime import datetime
+    
+    decision_dict = {
+        "agent_id": 1,
+        "agent_name": "EDA",
+        "decision_type": "ANALYSIS",
+        "timestamp": datetime.now().isoformat(),
+        "summary": "Quality score: 8/10",
+        "details": {
+            "quality_score": 8,
+            "missing_pct": 5.2,
+            "outlier_count": 3,
+        },
+        "confidence": 0.95,
+        "reasoning": "Comprehensive statistical analysis",
+        "impact": "Informs imputation strategy",
+    }
+    return decision_dict
+
+
+@pytest.fixture
+def mock_memory_context():
+    """Create mock memory context for agents."""
+    return {
+        "previous_decisions": [
+            {
+                "agent_id": 1,
+                "agent_name": "EDA",
+                "summary": "Quality score: 8/10",
+                "details": {"quality_score": 8, "missing_pct": 5.2},
+            }
+        ],
+        "dynamic_suggestions": [
+            "High missing rate (5.2%) — consider mean imputation",
+            "3 outliers detected — use robust scaling",
+        ],
+        "known_issues": ["Column 'X' has constant values"],
+        "recovery_hints": [],
+    }
 
 
 @pytest.fixture
@@ -209,3 +320,160 @@ def mock_state_agent6(project_id):
         "error": None,
         "thread_id": "test-thread-0000",
     }
+
+
+# ── Integration Test Fixtures ───────────────────────────────────────────
+
+@pytest.fixture
+def mock_state_with_memory(mock_pipeline_state, mock_memory_context):
+    """Pipeline state with memory context initialized."""
+    state = mock_pipeline_state.copy()
+    state["memory"] = Mock()
+    state["memory"].get_agent_context = Mock(return_value=mock_memory_context)
+    state["memory"].record_decision = Mock()
+    state["dynamic_suggestions"] = mock_memory_context["dynamic_suggestions"]
+    return state
+
+
+@pytest.fixture
+def mock_state_with_revision_loop(mock_pipeline_state):
+    """Pipeline state with revision loop enabled."""
+    state = mock_pipeline_state.copy()
+    state["enable_revision_loop"] = True
+    state["max_iterations"] = 3
+    state["iterations"] = 0
+    state["generation_history"] = []
+    state["feedback_history"] = []
+    state["approved"] = False
+    state["status"] = "generating"
+    return state
+
+
+@pytest.fixture
+def mock_state_timeout_test(mock_pipeline_state):
+    """Pipeline state for testing timeout behavior."""
+    state = mock_pipeline_state.copy()
+    state["enable_revision_loop"] = True
+    state["max_iterations"] = 1  # Force timeout after 1 iteration
+    state["iterations"] = 0
+    state["approved"] = False
+    state["status"] = "generating"
+    return state
+
+
+# ── Data Quality Fixtures ───────────────────────────────────────────────
+
+@pytest.fixture
+def df_with_missing_values():
+    """DataFrame with various missing value patterns."""
+    df = pd.DataFrame({
+        "col_mcar": [1, 2, np.nan, 4, 5, np.nan, 7, 8, 9, 10],  # MCAR
+        "col_mar": [1, 2, 3, np.nan, 5, np.nan, 7, 8, 9, 10],   # MAR
+        "col_complete": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],        # No missing
+        "col_mostly_missing": [1, np.nan, np.nan, np.nan, 5, np.nan, np.nan, 8, np.nan, 10],
+    })
+    return df
+
+
+@pytest.fixture
+def df_with_outliers():
+    """DataFrame with outliers."""
+    rng = np.random.default_rng(42)
+    df = pd.DataFrame({
+        "normal": rng.normal(0, 1, 100),
+        "with_outliers": np.concatenate([rng.normal(0, 1, 95), [100, 101, 102, 103, 104]]),
+    })
+    return df
+
+
+@pytest.fixture
+def df_with_multicollinearity():
+    """DataFrame with highly correlated features."""
+    rng = np.random.default_rng(42)
+    x = rng.normal(0, 1, 100)
+    df = pd.DataFrame({
+        "feat_1": x,
+        "feat_2": x + rng.normal(0, 0.1, 100),  # Highly correlated with feat_1
+        "feat_3": x * 2 + rng.normal(0, 0.1, 100),  # Highly correlated with feat_1
+        "feat_4": rng.normal(0, 1, 100),  # Independent
+    })
+    return df
+
+
+@pytest.fixture
+def df_with_duplicates():
+    """DataFrame with duplicate rows."""
+    df = pd.DataFrame({
+        "col_a": [1, 2, 3, 1, 2, 3, 4, 5],
+        "col_b": [10, 20, 30, 10, 20, 30, 40, 50],
+    })
+    return df
+
+
+# ── Configuration Fixtures ──────────────────────────────────────────────
+
+@pytest.fixture
+def mock_settings():
+    """Mock settings object."""
+    from config.settings import PipelineConfig, StorageMode, LLMProvider
+    
+    settings = Mock(spec=PipelineConfig)
+    settings.storage_mode = StorageMode.MEMORY
+    settings.llm_provider = LLMProvider.OPENAI
+    settings.openai_api_key = "sk-test-key"
+    settings.openai_model = "gpt-4o-mini"
+    settings.llm_temperature = 0.3
+    settings.llm_max_tokens = 4096
+    settings.enable_revision_loop = True
+    settings.max_iterations_per_agent = 1
+    settings.enable_human_in_loop = False
+    settings.log_level = "INFO"
+    return settings
+
+
+# ── End-to-End Pipeline Fixtures ────────────────────────────────────────
+
+@pytest.fixture
+def full_pipeline_state(sample_classification_csv, project_id, mock_llm_client):
+    """Complete pipeline state for end-to-end testing."""
+    return {
+        "project_id": project_id,
+        "project_goal": "Binary classification",
+        "dataset_path": sample_classification_csv,
+        "dataset_name": "sample_classification.csv",
+        "target_column": "target",
+        "problem_type": "classification",
+        
+        # Memory
+        "memory": Mock(),
+        "dynamic_suggestions": [],
+        "previous_decisions": [],
+        
+        # Agent outputs
+        "eda_report": None,
+        "llm_eda_analysis": None,
+        "eda_approved": False,
+        "cleaning_report": None,
+        "cleaned_data_path": None,
+        "selected_features": None,
+        "engineered_data_path": None,
+        "candidate_models": None,
+        "training_results": None,
+        "evaluation_report": None,
+        
+        # State machine
+        "current_agent_id": 1,
+        "current_step": "agent_1_eda",
+        "approval_status": "pending",
+        "thread_id": "test-thread-full",
+        
+        # Control
+        "enable_revision_loop": False,  # Disable for speed
+        "max_iterations": 1,
+        "iterations": 0,
+        "human_feedback": None,
+        "error": None,
+        "errors": [],
+        "retry_count": 0,
+    }
+
