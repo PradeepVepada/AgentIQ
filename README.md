@@ -1,9 +1,8 @@
 # AgentIQ — Autonomous Data Science Pipeline
 
-> **Version 2.0** — Now with Cross-Agent Memory Integration
-
 An autonomous 6-agent ML pipeline that guides users through the complete data science workflow:
-**EDA → Data Prep → Feature Engineering → Model Architecture → Training → Evaluation**
+**EDA → Data Prep → Feature Engineering → Model Architecture → Training → Evaluation**. 
+This system though sequential mimic's the job that of a data analyst, system's ability make dynamically change tracks and switch imeplementation plans based on the self-correction/review loop and that of user's feedback is its core advantage.
 
 Each step includes human approval gates, LangSmith tracing, and Firebird persistence.
 
@@ -128,10 +127,11 @@ AgentIQ/
 
 ---
 
-## Cross-Agent Memory (Integration Option 2)
+## Cross-Agent Memory
 
-This implementation uses **Option 2** from the ML Pipeline docs:
-> Keep My Simple Memory + Your LangGraph
+A Decision Journal lets all six agents share context and decisions instead of working in isolation by having each agent write its findings into a shared memory structure in agent_memory.py, where Agent 1 (EDA) records outputs like {"quality_score": 8, "missing_pct": 5.2, "outliers": 3}, Agent 2 (Prep) retrieves that context and receives suggestions such as “Low missing rate → use mean imputation,” then records its own decisions like {"duplicates_removed": 3, "imputation_method": "mean"}, and Agent 3 (Features) pulls combined context from Agents 1 and 2 to make more informed choices, with this pattern continuing through all six agents to build a complete audit trail; 
+
+The Decision Journal lives inside the LangGraph state and can persist to Firebird so the system can recover gracefully after crashes, resulting in better decisions, no redundant analysis, richer error‑recovery hints, and a fully traceable pipeline.
 
 ### Key Features
 
