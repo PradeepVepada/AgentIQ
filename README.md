@@ -129,9 +129,21 @@ AgentIQ/
 
 ## Cross-Agent Memory
 
-A Decision Journal lets all six agents share context and decisions instead of working in isolation by having each agent write its findings into a shared memory structure in agent_memory.py, where Agent 1 (EDA) records outputs like {"quality_score": 8, "missing_pct": 5.2, "outliers": 3}, Agent 2 (Prep) retrieves that context and receives suggestions such as “Low missing rate → use mean imputation,” then records its own decisions like {"duplicates_removed": 3, "imputation_method": "mean"}, and Agent 3 (Features) pulls combined context from Agents 1 and 2 to make more informed choices, with this pattern continuing through all six agents to build a complete audit trail; 
+Each agent operates with awareness of what previous agents discovered. Rather than running in isolation, agents share a Decision Journal i.e, a structured memory layer that passes context downstream across all six stages.
 
-The Decision Journal lives inside the LangGraph state and can persist to Firebird so the system can recover gracefully after crashes, resulting in better decisions, no redundant analysis, richer error‑recovery hints, and a fully traceable pipeline.
+**How it works:**
+- Agent 1 (EDA) records dataset quality, missing rates, and outlier findings
+- Agent 2 (Prep) reads Agent 1's findings and tailors its cleaning strategy accordingly
+- Agent 3 (Features) receives context from both Agents 1 and 2 to make smarter feature selection decisions
+- Agents 4, 5, and 6 continue building on accumulated context
+
+**What this enables:**
+- No redundant analysis — each agent builds on previous work
+- Smarter defaults — suggestions are data-driven, not generic
+- Full audit trail — every decision is recorded with reasoning and confidence score
+- Graceful recovery — if an agent fails, the next agent receives a recovery hint
+
+The Decision Journal persists to storage so the pipeline can resume after interruptions without losing context.
 
 ### Key Features
 
